@@ -36,6 +36,8 @@ from memory import TaskMemory
 from repair import RepairFinding, RepairLoop, RepairDisposition
 from telemetry import enabled as telemetry_enabled, make_record, record as telemetry_record
 from tools import ToolRegistry, default_registry
+from acceptance import evaluate_acceptance_criteria
+from enforcement import enforce as enforce_tool_calls
 
 
 # Re-export Status / dataclasses from controller.py for callers
@@ -183,6 +185,27 @@ class ControllerV2:
         for agent in serial_rest:
             transcripts.extend(await self._dispatch_parallel([agent], contract))
 
+        # ----- Tool-call enforcement (per-agent) ----- #
+        for agent_name, transcript_path in zip(
+            phase0 + serial_rest, transcripts[: len(phase0) + len(serial_rest)]
+        ):
+            try:
+                text = Path(transcript_path).read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                continue
+            enforcement = enforce_tool_calls(agent_name, text)
+            if not enforcement.passed:
+                for v in enforcement.violations:
+                    findings.append(Finding(
+                        severity="HIGH",
+                        message=f"TOOL_NOT_INVOKED: {v}",
+                        location=transcript_path,
+                    ))
+                self.memory.append_ledger(
+                    contract.task_id, "ENFORCEMENT_VIOLATION",
+                    {"agent": agent_name, "violations": enforcement.violations},
+                )
+
         # ----- 9-point check ----- #
         nine_point = await run_nine_point_check(worktree, contract, check_cmd)
 
@@ -205,6 +228,19 @@ class ControllerV2:
         )
 
         # ----- Deterministic machine gate ----- #
+        status = evaluate_gate(contract, nine_point, scope_violations, findings)
+
+        # ----- Acceptance-criteria evaluation (real, per-AC) ----- #
+        ac_evaluations = await evaluate_acceptance_criteria(contract.acceptance_criteria, check_cmd)
+        # Any unsatisfied AC adds a HIGH finding
+        for r in ac_evaluations:
+            if r.satisfied is False:
+                findings.append(Finding(
+                    severity="HIGH",
+                    message=f"AC_UNSATISFIED: {r.id} ({r.note or 'no note'})",
+                    location=r.command,
+                ))
+        # Re-evaluate gate (AC failures may upgrade status)
         status = evaluate_gate(contract, nine_point, scope_violations, findings)
 
         # ----- Dual-model verification (P3 #5) ----- #
@@ -263,8 +299,15 @@ class ControllerV2:
             timestamp=datetime.now(timezone.utc).isoformat(),
             nine_point=nine_point,
             acceptance_results=[
-                {"id": ac.id, "satisfied": None, "evidence_ref": None}
-                for ac in contract.acceptance_criteria
+                {
+                    "id": r.id,
+                    "satisfied": r.satisfied,
+                    "evidence_ref": r.evidence_ref,
+                    "command": r.command,
+                    "expected": r.expected,
+                    "note": r.note,
+                }
+                for r in ac_evaluations
             ],
             scope_violations=scope_violations,
             findings=findings,
@@ -293,23 +336,28 @@ class ControllerV2:
 # --------------------------------------------------------------------------- #
 # CLI
 # --------------------------------------------------------------------------- #
-async def _default_check(cmd: str) -> tuple[int, str]:
-    proc = await asyncio.create_subprocess_shell(
-        cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
-    )
-    stdout, stderr = await proc.communicate()
-    summary = (stdout or b"").decode("utf-8", errors="replace")[:500]
-    return proc.returncode or 0, summary
+def make_default_check(cwd: Path | None = None):
+    async def _check(cmd: str) -> tuple[int, str]:
+        proc = await asyncio.create_subprocess_shell(
+            cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            cwd=str(cwd) if cwd else None,
+        )
+        stdout, stderr = await proc.communicate()
+        summary = (stdout or b"").decode("utf-8", errors="replace")
+        if stderr:
+            summary += "\n[stderr]\n" + (stderr or b"").decode("utf-8", errors="replace")
+        return proc.returncode or 0, summary
+    return _check
 
 
 async def _main(args: argparse.Namespace) -> int:
     contract = _load_contract_yaml(Path(args.contract))
     memory = TaskMemory(Path(args.memory_db))
-    from adapters.zcode_adapter import ZCodeAdapter  # type: ignore
-    adapter = ZCodeAdapter()
+    from adapters.grok_adapter import GrokAdapter  # type: ignore
+    adapter = GrokAdapter()
 
     controller = ControllerV2(adapter=adapter, memory=memory)
-    report = await controller.run(contract, Path(args.worktree), _default_check)
+    report = await controller.run(contract, Path(args.worktree), make_default_check(Path(args.worktree)))
 
     out = Path(args.out)
     out.parent.mkdir(parents=True, exist_ok=True)

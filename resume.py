@@ -69,7 +69,7 @@ async def _main(args: argparse.Namespace) -> int:
             cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
         )
         stdout, stderr = await proc.communicate()
-        return proc.returncode or 0, (stdout or b"").decode("utf-8", errors="replace")[:500]
+        return proc.returncode or 0, (stdout or b"").decode("utf-8", errors="replace")
 
     report = await controller.run(contract, Path(args.worktree), _default_check)
     print(json.dumps({

@@ -283,23 +283,29 @@ async def run_contract(
 # --------------------------------------------------------------------------- #
 # CLI
 # --------------------------------------------------------------------------- #
-async def _default_check(cmd: str) -> tuple[int, str]:
-    """Skeleton check command — runs in subprocess and returns (exit_code, summary)."""
-    proc = await asyncio.create_subprocess_shell(
-        cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE
-    )
-    stdout, stderr = await proc.communicate()
-    summary = (stdout or b"").decode("utf-8", errors="replace")[:500]
-    return proc.returncode or 0, summary
+def make_default_check(cwd: Path | None = None):
+    """Build a check_cmd callable that runs in `cwd`. Returns (exit_code, summary)."""
+    async def _check(cmd: str) -> tuple[int, str]:
+        proc = await asyncio.create_subprocess_shell(
+            cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE,
+            cwd=str(cwd) if cwd else None,
+        )
+        stdout, stderr = await proc.communicate()
+        # Capture full output (was 500 — too short for pytest's tail line "2 passed")
+        summary = (stdout or b"").decode("utf-8", errors="replace")
+        if stderr:
+            summary += "\n[stderr]\n" + (stderr or b"").decode("utf-8", errors="replace")
+        return proc.returncode or 0, summary
+    return _check
 
 
 async def _main(args: argparse.Namespace) -> int:
     contract = load_contract(Path(args.contract))
     # Adapter import is deferred so the skeleton stays platform-agnostic
-    from adapters.zcode_adapter import ZCodeAdapter  # type: ignore
+    from adapters.grok_adapter import GrokAdapter  # type: ignore
 
-    adapter = ZCodeAdapter()
-    report = await run_contract(contract, adapter, Path(args.worktree), _default_check)
+    adapter = GrokAdapter()
+    report = await run_contract(contract, adapter, Path(args.worktree), make_default_check(Path(args.worktree)))
 
     # Persist report
     out = Path(args.out)
