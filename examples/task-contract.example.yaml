@@ -1,0 +1,33 @@
+# Example task-contract.yaml for the Walking Skeleton controller
+# See docs/ROADMAP.md for the full schema and P2/P3 evolution.
+task_id: example-001
+base_commit: HEAD
+goal: Demonstrate the walking-skeleton controller end-to-end.
+risk_tier: complex   # trivial | normal | complex | critical
+
+must:
+  - The controller emits a verification-report.json with status VERIFIED.
+  - All 9 nine-point checks run (commands may exit non-zero in this stub).
+
+must_not:
+  - The controller must not silently skip a tier.
+  - The controller must not let an LLM override a failed machine gate.
+
+non_goals:
+  - Real async parallelism (P2).
+  - Persistent task memory across runs (P2).
+  - Property-based / fuzzing / mutation testing (P3).
+
+acceptance_criteria:
+  - id: AC1
+    condition: controller exits 0 only when status == VERIFIED
+  - id: AC2
+    condition: nine_point has 9 entries
+  - id: AC3
+    condition: residual_unknowns is a list (may be empty)
+
+allowed_scope:
+  - "src/**"
+  - "tests/**"
+
+blocking_unknowns: []
