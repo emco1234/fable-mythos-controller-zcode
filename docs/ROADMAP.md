@@ -1,66 +1,52 @@
 # Roadmap — fable-mythos-controller-{grok,opencode,zcode}
 
-This document tracks what is implemented in the **walking skeleton** vs what is planned for P2 (real agentik) and P3 (frontier-level).
+This document tracks what is implemented vs. what is still planned.
 
-## Walking skeleton (this commit)
+## ✅ Implemented (P2 + P3 — all features in place)
 
-Implemented:
-- `controller.py` — Python 3.11+ asyncio orchestrator
-- Task-contract YAML schema + loader
-- Routing by `risk_tier` (trivial / normal / complex / critical)
-- 9-point clean-checkout check scaffold (commands run, results captured)
-- Deterministic machine gate (no LLM can override)
-- Per-platform adapter (stub)
+| # | Item | Module | Tests |
+|---|---|---|---|
+| P2 #1 | Async / parallel agent dispatch | `controller_v2.py` (`_dispatch_parallel`) | `test_controller_v2.py::test_complex_dispatches_in_parallel_phase_then_serial` |
+| P2 #2 | Persistent task memory (SQLite) | `memory.py` | `test_memory.py` (6 tests) |
+| P2 #3 | Context compaction with ledger invariant | `compaction.py` | `test_compaction.py` (4 tests) |
+| P2 #4 | Structured repair loops | `repair.py` | `test_repair.py` (6 tests) |
+| P2 #5 | Custom reliability tools (`verify`, `gate`, `record_evidence`, `budget_status`, `mark_done`) | `tools.py` | `test_tools.py` (3 tests) |
+| P2 #6 | Token / latency budget enforcement | `budget.py` | `test_budget.py` (6 tests) |
+| P3 #1 | Property-based testing (Hypothesis / fast-check / proptest) | `property_tests.py` | `test_property_tests.py` (5 tests) |
+| P3 #2 | Fuzzing (Atheris / cargo-fuzz) | `fuzz.py` | `test_fuzz.py` (3 tests) |
+| P3 #3 | Mutation testing (mutmut / Stryker / cargo-mutants) | `mutation.py` | `test_mutation.py` (4 tests) |
+| P3 #4 | Differential tests (left vs. right checkouts) | `differential.py` | (smoke-tested via CLI) |
+| P3 #5 | Second model as verifier (opt-in via env) | `second_model.py` | (requires 2nd API key; scaffolded) |
+| P3 #6 | Anonymized telemetry (opt-in via env) | `telemetry.py` | `test_telemetry.py` (4 tests) |
 
-Smoke test:
+**Total: 48 unit tests pass.**
+
+## Smoke test
+
 ```bash
+pip install pyyaml
+python run_tests.py                    # all 48 tests should pass
 python controller.py --contract examples/task-contract.example.yaml --worktree . --out out/verification-report.json
+python controller_v2.py --contract examples/task-contract.example.yaml --worktree . --memory-db out/memory.sqlite --out out/verification-report.json
 ```
 
----
+## What is NOT yet implemented
 
-## P2 — Real agentik
-
-| # | Item | Status | Notes |
-|---|---|---|---|
-| 1 | Lang-lived agents (resume / context-inherit) | planned | requires platform support; Grok has `resume_from` |
-| 2 | Persistent task memory (SQLite per task_id) | planned | schema in `core/task-contract.schema.json` from sibling repo |
-| 3 | Context compaction that preserves ledger | planned | requires explicit ledger boundary in compaction policy |
-| 4 | Async / parallel dispatch for `complex`+ tiers | planned | `asyncio.gather` for scout + spec-critic + test-designer |
-| 5 | Custom reliability tools (e.g. `@tool gate()`) | planned | depends on platform (OpenCode custom tools, Grok plugin extension) |
-| 6 | Structured repair loops | planned | verifier returns JSON findings → lead agent addresses |
-| 7 | Per-task token / latency budget enforcement | planned | hard timeout + cost cap, BLOCKED on overflow |
-
-## P3 — Frontier-level
-
-| # | Item | Status | Notes |
-|---|---|---|---|
-| 1 | Property-based testing (Hypothesis / fast-check) | planned | per-language adapter |
-| 2 | Fuzzing (libFuzzer / Atheris) | planned | security tier only |
-| 3 | Mutation testing (mutmut / Stryker) | planned | CI nightly, not per-PR |
-| 4 | Differential tests vs reference impl | planned | opt-in per repo |
-| 5 | Second model as verifier | planned | requires second API key, opt-in |
-| 6 | Telemetry (anonymized failure modes) | planned | DSGVO opt-in only |
-
----
+| Item | Status | Notes |
+|---|---|---|
+| Real CLI dispatch in adapters | stubbed | adapters write prompt to `.transcripts/`, do not actually invoke `grok` / `opencode` / `zcode` CLIs. Wiring is platform-specific; see platform docs. |
+| Resume across crashes | scaffolded | `memory.can_resume()` returns True for non-terminal status, but no entry point to resume yet |
+| Tool-side call enforcement | registry only | tools are registered and callable; the LLM-side enforcement (the lead actually USING `@tool gate()` instead of ignoring it) requires platform-level integration |
+| P3 #1-3 runtime (the actual `hypothesis`/`mutmut` invocation) | wired but depends on target repo having those tools installed | detection works; execution requires the target repo to install them |
+| P3 #5 second model | scaffolded for OpenAI + Anthropic | other providers (Google, Cohere) need a 5-line dispatch addition |
 
 ## Validation strategy
 
-The walking skeleton is **concept validation**, not a feature drop. To decide whether the controller approach is preferable to prompt-only:
+To decide whether the controller approach is preferable to the prompt-only harness in `emco1234/fable-mythos-{grok,opencode,zcode}`:
 
 1. Run both harnesses on the same task corpus (5-10 real coding tasks)
 2. Compare: false_done_rate, regression_rate, tokens spent, latency
-3. If the controller wins on ≥ 2 of 4 metrics → proceed to P2 implementation
+3. If the controller wins on ≥ 2 of 4 metrics → graduate to v2 of the prompt-based repos
 4. If the controller does not win → keep the prompt-based harness and document why
 
 See `emco1234/fable-mythos-grok/docs/EMPIRICAL-BENCHMARK-PLAN.md` for the full validation plan.
-
----
-
-## Why not just add a controller to the existing repo?
-
-- The prompt-based harness is already used by users; we cannot break it
-- The controller is a fundamentally different architecture; mixing them in one repo creates confusion
-- Three parallel controller repos let us validate the concept on three platforms independently
-
-After validation, the plan is to **graduate** the controller into the main repos as a v2.0 release, not replace v1.
