@@ -1,0 +1,8 @@
+{
+  "name": "fable-mythos-controller",
+  "version": "0.1.0",
+  "description": "Auto-trigger Reliability Harness v2 Controller for ZCode. Detects coding tasks, generates a task-contract YAML, runs the deterministic Python controller, and returns a structured verification report. Mirrors the prompt-only harness behavior of fable-mythos-zcode but with a code-based machine-gate instead of LLM-based status emission.",
+  "author": "emco1234",
+  "license": "MIT",
+  "homepage": "https://github.com/emco1234/fable-mythos-controller-zcode"
+}
