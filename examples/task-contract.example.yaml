@@ -6,7 +6,7 @@ goal: Demonstrate the walking-skeleton controller end-to-end.
 risk_tier: complex   # trivial | normal | complex | critical
 
 must:
-  - The controller emits a verification-report.json with status VERIFIED.
+  - The controller emits a verification-report.json with a machine status enum.
   - All 9 nine-point checks run (commands may exit non-zero in this stub).
 
 must_not:
@@ -31,3 +31,6 @@ allowed_scope:
   - "tests/**"
 
 blocking_unknowns: []
+
+# SMOKE note: Without pytest/mypy/ruff installed, nine-point checks fail and status is typically BLOCKED.
+# That is correct skeleton behaviour — not a production MAP failure. Daily MAP = prompt harness repos.

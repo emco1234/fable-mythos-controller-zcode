@@ -6,4 +6,4 @@ out/
 .pytest_cache/
 .venv/
 venv/
-*.egg-info/
+*.egg-info/out/
